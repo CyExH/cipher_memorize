@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>进阶密码训练</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #3498db;
+            --bg-color: #ecf0f1;
+            --card-bg: #ffffff;
+            --correct-color: #27ae60;
+            --wrong-color: #c0392b;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--primary-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+
+        h1 { margin: 0 0 1.5rem 0; font-size: 1.5rem; }
+
+        /* 控制栏布局 */
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 1.5rem;
+        }
+
+        select, button.mode-switch {
+            padding: 10px;
+            font-size: 0.9rem;
+            border-radius: 6px;
+            border: 1px solid #bdc3c7;
+            background: white;
+            width: 100%;
+        }
+
+        /* 题目显示区 */
+        .question-box {
+            background-color: #34495e;
+            color: #ecf0f1;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+            font-family: 'Courier New', monospace; /* 等宽字体适合显示密码 */
+            word-break: break-all;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        /* 填空模式样式 */
+        #inputSection input {
+            width: 70%;
+            padding: 12px;
+            font-size: 1.2rem;
+            border: 2px solid #bdc3c7;
+            border-radius: 6px;
+            text-align: center;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        
+        #inputSection button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        /* 选择题模式样式 */
+        #choiceSection {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .choice-btn {
+            background-color: white;
+            border: 2px solid #bdc3c7;
+            color: var(--primary-color);
+            padding: 15px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+        }
+
+        .choice-btn:hover { background-color: #f1f2f6; border-color: var(--accent-color); }
+        
+        /* 状态反馈样式 */
+        .choice-btn.correct { background-color: var(--correct-color); color: white; border-color: var(--correct-color); }
+        .choice-btn.wrong { background-color: var(--wrong-color); color: white; border-color: var(--wrong-color); opacity: 0.6; }
+
+        .feedback { margin-top: 15px; font-weight: bold; height: 24px; }
+        .loading { color: #7f8c8d; font-style: italic; }
+        
+        /* 隐藏类 */
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🕵️ 密码破译训练</h1>
+    
+    <div class="controls">
+        <select id="cipherMode" onchange="resetGame()">
+            <option value="a1z26">A1Z26 (数字)</option>
+            <option value="morse">摩斯电码 (符号)</option>
+            <option value="binary">5位二进制</option>
+        </select>
+        <select id="gameMode" onchange="toggleGameMode()">
+            <option value="choice">选择题模式</option>
+            <option value="input">填空模式</option>
+        </select>
+    </div>
+
+    <div class="question-box" id="questionDisplay">等待加载词库...</div>
+
+    <div id="inputSection" class="hidden">
+        <input type="text" id="userAnswer" placeholder="输入明文单词" autocomplete="off">
+        <button onclick="checkInputAnswer()">提交</button>
+    </div>
+
+    <div id="choiceSection" class="hidden">
+        </div>
+
+    <div class="feedback" id="feedback"></div>
+</div>
+
+<script>
+    // --- 核心数据与变量 ---
+    let wordList = [];
+    let currentWord = "";
+    let isLocked = false; // 防止重复点击
+
+    const morseCode = {
+        'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.', 'F': '..-.',
+        'G': '--.', 'H': '....', 'I': '..', 'J': '.---', 'K': '-.-', 'L': '.-..',
+        'M': '--', 'N': '-.', 'O': '---', 'P': '.--.', 'Q': '--.-', 'R': '.-.',
+        'S': '...', 'T': '-', 'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-',
+        'Y': '-.--', 'Z': '--..', '0': '-----', '1': '.----', '2': '..---',
+        '3': '...--', '4': '....-', '5': '.....', '6': '-....', '7': '--...',
+        '8': '---..', '9': '----.'
+    };
+
+    // --- 1. 初始化加载词库 ---
+    window.onload = async function() {
+        try {
+            // 加载同目录下的 words.txt
+            const response = await fetch('words.txt');
+            if (!response.ok) throw new Error("无法读取 words.txt");
+            const text = await response.text();
+            
+            // 处理文本：按行分割，去空格，转大写，过滤空行
+            wordList = text.split('\n')
+                .map(w => w.trim().toUpperCase())
+                .filter(w => w.length > 0);
+
+            if (wordList.length < 4) {
+                alert("警告：words.txt 中的单词太少（至少需要4个），请补充词库。");
+            }
+
+            console.log(`成功加载 ${wordList.length} 个单词`);
+            toggleGameMode(); // 初始化界面
+        } catch (error) {
+            document.getElementById('questionDisplay').innerText = "❌ 错误: 找不到 words.txt";
+            document.getElementById('feedback').innerText = "请确保 words.txt 已上传到 GitHub 仓库同一目录。";
+            console.error(error);
+        }
+    };
+
+    // --- 2. 算法工具 ---
+
+    // 莱温斯坦距离 (Levenshtein Distance) 计算函数
+    function levenshtein(a, b) {
+        const matrix = [];
+        for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+        for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+        for (let i = 1; i <= b.length; i++) {
+            for (let j = 1; j <= a.length; j++) {
+                if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(
+                        matrix[i - 1][j - 1] + 1, // 替换
+                        Math.min(matrix[i][j - 1] + 1, // 插入
+                        matrix[i - 1][j] + 1) // 删除
+                    );
+                }
+            }
+        }
+        return matrix[b.length][a.length];
+    }
+
+    // 获取干扰项
+    function getDistractors(target, count) {
+        // 1. 筛选出所有长度相同的词（排除自己）
+        let candidates = wordList.filter(w => w.length === target.length && w !== target);
+        
+        // 2. 如果长度相同的词不够，就从全部词库里补（尽量不让程序崩溃）
+        if (candidates.length < count) {
+            let others = wordList.filter(w => w !== target && !candidates.includes(w));
+            candidates = candidates.concat(others);
+        }
+
+        // 3. 计算距离并排序
+        let ranked = candidates.map(w => {
+            return { word: w, dist: levenshtein(target, w) };
+        });
+        
+        // 按编辑距离从小到大排序（越小越像）
+        ranked.sort((a, b) => a.dist - b.dist);
+
+        // 4. 取前 count 个，并返回单词数组
+        return ranked.slice(0, count).map(item => item.word);
+    }
+
+    // 数组洗牌 (Fisher-Yates)
+    function shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
+
+    // --- 3. 游戏逻辑 ---
+
+    function toggleGameMode() {
+        const mode = document.getElementById('gameMode').value;
+        const inputSec = document.getElementById('inputSection');
+        const choiceSec = document.getElementById('choiceSection');
+
+        if (mode === 'choice') {
+            inputSec.classList.add('hidden');
+            choiceSec.classList.remove('hidden');
+        } else {
+            inputSec.classList.remove('hidden');
+            choiceSec.classList.add('hidden');
+        }
+        resetGame(); // 切换模式时重置题目
+    }
+
+    function encrypt(word) {
+        const mode = document.getElementById('cipherMode').value;
+        const chars = word.split('');
+        
+        if (mode === 'a1z26') {
+            return chars.map(c => {
+                const code = c.charCodeAt(0);
+                return (code >= 65 && code <= 90) ? code - 64 : c;
+            }).join('-');
+        } else if (mode === 'morse') {
+            return chars.map(c => morseCode[c] || c).join(' / ');
+        } else if (mode === 'binary') {
+            return chars.map(c => {
+                const code = c.charCodeAt(0) - 64;
+                // 仅转换字母，其他符号保留
+                if (code >= 1 && code <= 26) {
+                    return code.toString(2).padStart(5, '0');
+                }
+                return c;
+            }).join(' ');
+        }
+        return word;
+    }
+
+    function resetGame() {
+        if (wordList.length === 0) return;
+
+        isLocked = false;
+        document.getElementById('feedback').innerText = "";
+        document.getElementById('userAnswer').value = "";
+        
+        // 随机选词
+        currentWord = wordList[Math.floor(Math.random() * wordList.length)];
+        
+        // 显示加密文本
+        document.getElementById('questionDisplay').innerText = encrypt(currentWord);
+
+        // 根据模式准备答案区域
+        const mode = document.getElementById('gameMode').value;
+        if (mode === 'choice') {
+            setupMultipleChoice();
+        } else {
+            document.getElementById('choiceSection').innerHTML = ""; // 清空按钮
+        }
+    }
+
+    function setupMultipleChoice() {
+        const container = document.getElementById('choiceSection');
+        container.innerHTML = "";
+
+        // 获取3个干扰项
+        const distractors = getDistractors(currentWord, 3);
+        // 组合并打乱
+        const options = shuffleArray([currentWord, ...distractors]);
+
+        options.forEach(opt => {
+            const btn = document.createElement('button');
+            btn.className = 'choice-btn';
+            btn.innerText = opt;
+            btn.onclick = () => checkChoiceAnswer(btn, opt);
+            container.appendChild(btn);
+        });
+    }
+
+    // --- 4. 判题逻辑 ---
+
+    function checkInputAnswer() {
+        if (isLocked) return;
+        const input = document.getElementById('userAnswer').value.trim().toUpperCase();
+        handleResult(input === currentWord);
+    }
+
+    function checkChoiceAnswer(btn, value) {
+        if (isLocked) return;
+        const isCorrect = (value === currentWord);
+        
+        // 视觉反馈
+        if (isCorrect) {
+            btn.classList.add('correct');
+        } else {
+            btn.classList.add('wrong');
+            // 自动把正确的那个标绿
+            const buttons = document.querySelectorAll('.choice-btn');
+            buttons.forEach(b => {
+                if (b.innerText === currentWord) b.classList.add('correct');
+            });
+        }
+        handleResult(isCorrect);
+    }
+
+    function handleResult(isCorrect) {
+        isLocked = true;
+        const feedback = document.getElementById('feedback');
+        
+        if (isCorrect) {
+            feedback.innerText = "✅ 正确！";
+            feedback.style.color = "var(--correct-color)";
+            setTimeout(resetGame, 800); // 0.8秒后下一题
+        } else {
+            feedback.innerText = `❌ 错误，答案是: ${currentWord}`;
+            feedback.style.color = "var(--wrong-color)";
+            setTimeout(resetGame, 1500); // 答错多留一点时间看答案
+        }
+    }
+
+    // 监听回车键 (仅填空模式)
+    document.getElementById('userAnswer').addEventListener("keypress", function(event) {
+        if (event.key === "Enter") checkInputAnswer();
+    });
+
+</script>
+
+</body>
+</html>
